@@ -1,59 +1,72 @@
-import streamlit as st
+import os
 import stripe
+import librosa
+import numpy as np
+import tensorflow as tf
+from flask import Flask, render_template_string, request, redirect
 
-# 1. Configurare Stripe
-stripe.api_key = "sk_test_PUNE_AICI_CHEIA_TA_DIN_STRIPE"
+# --- CHEILE TALE STRIPE ---
+stripe.api_key = "sk_test_51P6WshRu8vW8f7fTM85H1pBeH7O20Z248p1mE7m4w7Y8u2u6Z5y3O1p9X8e7r6t5"
 
-# Titlul aplicației
-st.title("AI Detector Pro")
+app = Flask(_name_)
 
-# 2. Preluăm parametrii din URL pentru a verifica plata
-query_params = st.query_params
+# --- FUNCTII AI ---
+def genereaza_spectrograma(cale_fisier):
+    try:
+        y, sr = librosa.load(cale_fisier, duration=10)
+        S = librosa.feature.melspectrogram(y=y, sr=sr, n_mels=128)
+        S_dB = librosa.power_to_db(S, ref=np.max)
+        if S_dB.shape[1] > 430: S_dB = S_dB[:, :430]
+        else: S_dB = np.pad(S_dB, ((0,0), (0, 430 - S_dB.shape[1])))
+        return S_dB.reshape(1, 128, 430, 1)
+    except: return None
 
-if query_params.get("payment") == "success":
-    st.balloons()
-    st.success("✅ Plată confirmată! Analiza completă a fost deblocată.")
-    
-    # --- LOC PENTRU REZULTATELE TALE COMPLETE ---
-    st.header("Raport Tehnic Complet")
-    st.write("- Analiza frecvențelor: Detectat tipar algoritmic în spectrul 14kHz.")
-    st.write("- Semnătură vocală: 92% probabilitate de sinteză neuronală.")
-    # --------------------------------------------
-    
-    if st.button("Înapoi la scaner"):
-        st.query_params.clear()
-        st.rerun()
+def creeaza_model():
+    model = tf.keras.models.Sequential([
+        tf.keras.layers.Conv2D(32, (3, 3), activation='relu', input_shape=(128, 430, 1)),
+        tf.keras.layers.MaxPooling2D((2, 2)),
+        tf.keras.layers.Flatten(),
+        tf.keras.layers.Dense(1, activation='sigmoid')
+    ])
+    model.compile(optimizer='adam', loss='binary_crossentropy')
+    return model
+
+# Incarcam sau cream un model gol de test
+if os.path.exists("detector_finalizat.h5"):
+    model = tf.keras.models.load_model("detector_finalizat.h5")
 else:
-    # 3. Interfața principală înainte de plată
-    st.write("### Probabilitate AI: 85%")
-    st.info("Pentru a vedea raportul complet și dovezile tehnice, te rugăm să deblochezi analiza.")
+    model = creeaza_model()
 
-    if st.button("Analiză deblocată! (1€)"):
-        try:
-            # Crearea sesiunii de checkout
-            checkout_session = stripe.checkout.Session.create(
-                payment_method_types=['card'],
-                line_items=[{
-                    'price_data': {
-                        'currency': 'eur',
-                        'product_data': {
-                            'name': 'Analiză completă audio AI',
-                        },
-                        'unit_amount': 100,  # 1 Euro
-                    },
-                    'quantity': 1,
-                }],
-                mode='payment',
-                success_url='http://localhost:8501/?payment=success',
-                cancel_url='http://localhost:8501/?payment=cancel',
-            )
-            
-            # Redirecționare către Stripe
-            st.markdown(f'<meta http-equiv="refresh" content="0; url={checkout_session.url}">', unsafe_allow_html=True)
-            st.write(f"Dacă nu ești redirecționat, [click aici]({checkout_session.url}).")
-            
-        except Exception as e:
-            st.error(f"Eroare la activarea plății: {e}")
+# --- PAGINA WEB ---
+@app.route('/')
+def index():
+    return '''
+    <h1>Detector Muzica AI - 1€</h1>
+    <form action="/pay" method="POST"><button type="submit">Plateste 1€ si Verifica</button></form>
+    '''
 
-if query_params.get("payment") == "cancel":
-    st.warning("Plata a fost anulată. Te rugăm să încerci din nou.")
+@app.route('/pay', methods=['POST'])
+def pay():
+    session = stripe.checkout.Session.create(
+        line_items=[{'price_data': {'currency': 'eur', 'product_data': {'name': 'Verificare AI'}, 'unit_amount': 100}, 'quantity': 1}],
+        mode='payment',
+        success_url=request.host_url + 'upload?session_id={CHECKOUT_SESSION_ID}',
+        cancel_url=request.host_url
+    )
+    return redirect(session.url, code=303)
+
+@app.route('/upload')
+def upload():
+    return '<h1>Plata reusita!</h1><form action="/result" method="POST" enctype="multipart/form-data"><input type="file" name="file"><button type="submit">Analizeaza</button></form>'
+
+@app.route('/result', methods=['POST'])
+def result():
+    f = request.files['file']
+    f.save("temp.mp3")
+    data = genereaza_spectrograma("temp.mp3")
+    res = model.predict(data)[0][0]
+    verdict = "AI" if res > 0.5 else "UMAN"
+    return f"<h1>Rezultat: {verdict}</h1><p>Scor: {res}</p><a href='/'>Inapoi</a>"
+
+if _name_ == "_main_":
+    app.run(port=5000)
