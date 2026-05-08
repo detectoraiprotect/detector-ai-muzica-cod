@@ -1,0 +1,5 @@
+flask
+stripe
+librosa
+numpy
+gunicorn
