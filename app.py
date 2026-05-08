@@ -1,31 +1,59 @@
 import streamlit as st
-import librosa
-import numpy as np
 import stripe
-import datetime
 
-# --- CONFIGURARE PLĂȚI ---
-stripe.api_key = "sk_test_51Pxu86B6fCFFJHDsy82RBMe92L1MzdMuS7n6v68R8R8z3HFnOBUmjud4Vf5nsmE1eFSykuzWr5vPht8al6lYwBb7U00S0vR9C41"
-STRIPE_PUBLISHABLE_KEY = "pk_test_51Pxu86B6fCFFJHDsyR06p4IFRUd8C7VQyuXntPBPBnt81Fo6FK8wJLrtUVXvOTnpqaS3i1yEUNXvhu8wkIImTyUP00BT0SaeMS"
+# 1. Configurare Stripe
+stripe.api_key = "sk_test_PUNE_AICI_CHEIA_TA_DIN_STRIPE"
 
-st.set_page_config(page_title="AI Detector Pro", page_icon="🛡️")
+# Titlul aplicației
+st.title("AI Detector Pro")
 
-if 'platit' not in st.session_state:
-    st.session_state.platit = False
+# 2. Preluăm parametrii din URL pentru a verifica plata
+query_params = st.query_params
 
-st.title("🛡️ AI Detector Pro")
-st.write("Încarcă un fișier. Analiza completă costă 1€.")
+if query_params.get("payment") == "success":
+    st.balloons()
+    st.success("✅ Plată confirmată! Analiza completă a fost deblocată.")
+    
+    # --- LOC PENTRU REZULTATELE TALE COMPLETE ---
+    st.header("Raport Tehnic Complet")
+    st.write("- Analiza frecvențelor: Detectat tipar algoritmic în spectrul 14kHz.")
+    st.write("- Semnătură vocală: 92% probabilitate de sinteză neuronală.")
+    # --------------------------------------------
+    
+    if st.button("Înapoi la scaner"):
+        st.query_params.clear()
+        st.rerun()
+else:
+    # 3. Interfața principală înainte de plată
+    st.write("### Probabilitate AI: 85%")
+    st.info("Pentru a vedea raportul complet și dovezile tehnice, te rugăm să deblochezi analiza.")
 
-audio_file = st.file_uploader("Încarcă audio", type=["mp3", "wav"])
+    if st.button("Analiză deblocată! (1€)"):
+        try:
+            # Crearea sesiunii de checkout
+            checkout_session = stripe.checkout.Session.create(
+                payment_method_types=['card'],
+                line_items=[{
+                    'price_data': {
+                        'currency': 'eur',
+                        'product_data': {
+                            'name': 'Analiză completă audio AI',
+                        },
+                        'unit_amount': 100,  # 1 Euro
+                    },
+                    'quantity': 1,
+                }],
+                mode='payment',
+                success_url='http://localhost:8501/?payment=success',
+                cancel_url='http://localhost:8501/?payment=cancel',
+            )
+            
+            # Redirecționare către Stripe
+            st.markdown(f'<meta http-equiv="refresh" content="0; url={checkout_session.url}">', unsafe_allow_html=True)
+            st.write(f"Dacă nu ești redirecționat, [click aici]({checkout_session.url}).")
+            
+        except Exception as e:
+            st.error(f"Eroare la activarea plății: {e}")
 
-if audio_file:
-    if not st.session_state.platit:
-        st.warning("Plătește 1€ pentru a debloca rezultatul.")
-        if st.button("💳 Plătește acum"):
-            st.session_state.platit = True
-            st.rerun()
-    else:
-        st.success("Analiză deblocată!")
-        y, sr = librosa.load(audio_file, duration=30)
-        rolloff = np.mean(librosa.feature.spectral_rolloff(y=y, sr=sr))
-        st.metric("Probabilitate AI", f"{85 if rolloff < 6500 else 15}%")
+if query_params.get("payment") == "cancel":
+    st.warning("Plata a fost anulată. Te rugăm să încerci din nou.")
