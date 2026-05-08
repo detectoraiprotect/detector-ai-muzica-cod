@@ -1,4 +1,6 @@
-streamlit
-librosa
-numpy
+flask
 stripe
+librosa
+tensorflow-cpu
+numpy
+gunicorn
