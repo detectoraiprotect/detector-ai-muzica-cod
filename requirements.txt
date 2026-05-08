@@ -1,6 +1,6 @@
 flask
 stripe
 librosa
-tensorflow-cpu
+tensorflow
 numpy
 gunicorn
